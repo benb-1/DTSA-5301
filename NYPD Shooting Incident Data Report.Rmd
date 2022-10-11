@@ -1,0 +1,143 @@
+---
+title: "NYPD Shooting  Data"
+output:
+  html_document: default
+  pdf_document: default
+date: "2022-09-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Overview
+
+This dataset contains information about recorded shooting incidents in New York City from 2006-2021.
+It contains information about time, date, location, age and race of perpetrator and victim, and bureaucratic codes describing the incidents.
+I will be stripping the data of demographic and bureaucratic information, and studying patterns in the time and location of the incident data
+
+## Project Step 1: Start an Rmd Document
+### Start an Rmd document that describes and imports the shooting project dataset in a reproducible manner.
+
+ - Load tidyverse  
+```{r tidyverse}
+library(tidyverse)
+```
+
+ - Set data URL  
+```{r set url}
+nypd.shooting.data.url = "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+# This dataset contains information about recorded shooting incidents in New York City from 2006-2021.
+# It contains information about time, date, location, age and race of perpetrator and victim, and bureaucratic codes describing the incidents.
+# I will be stripping the data of demographic and bureaucratic information, and studing patterns in the time and location of the incident data
+```
+ 
+ - Load data from url  
+```{r load data from url}
+nypd.shooting.data = read_csv(nypd.shooting.data.url)
+```
+
+## Project Step 2: Tidy and Transform Your Data
+### Add to your Rmd document a summary oasf the data and clean up your dataset by changing appropriate variables to factor and date types and getting rid of any columns not needed.  Show the summary of your data to be sure there is no missing data. If there is missing data, describe how you plan to handle it.
+
+
+ # Add to your Rmd document a summary of the data  
+```{r data summary}
+summary(nypd.shooting.data)
+```
+
+
+ # clean up your dataset by changing appropriate variables to factor and date types and getting rid of any columns not needed  
+```{r cleaning data}
+#Get rid of extra columns
+data.clean = select(nypd.shooting.data, c(OCCUR_DATE, OCCUR_TIME, Latitude, Longitude))
+#Convert date from <chr> to a date
+data.clean$OCCUR_DATE = data.clean$OCCUR_DATE %>% as.Date(format="%m/%d/%Y")
+#Sort data by date
+data.clean = data.clean[order(data.clean$OCCUR_DATE),]
+
+```
+
+ # Show the summary of your data to be sure there is no missing data. If there is missing data, describe how you plan to handle it.
+```{r cleaned data summary}
+summary(data.clean)
+sum(is.na(data.clean))
+# In the columns we are using, there is no missing data
+```
+
+
+## Project Step 3: Add Visualizations and Analysis
+### Add at least two different visualizations & some analysis to your Rmd.  Does this raise additional questions that you should investigate?  
+
+ - Shooting Incidents Recorded in a 7-day period.
+```{r Weekly shootings plot}
+ggplot(data=data.clean, aes=(x=OCCUR_DATE)) + 
+  geom_histogram(mapping=aes(x=OCCUR_DATE), binwidth=7) +
+  xlab("Date") +
+  ylab("Shootings per Week") +
+  scale_x_date(date_breaks = "2 years") +
+  labs(title="NYPD-Recorded Shootings per week. 2006-2021 ")
+```  
+  
+Overall, shooting incidents had been mostly decreasing year-over-year, until recently.  
+The plot shows a clear yearly pattern, with many more shooting incidents recorded during the summer than during the winter.  
+Further questions to investigate might be:  
+ - Why are there more recorded shooting incidents during the summer? To what extent is the pattern here true, or does the likelihood of an incident being recorded change over time in some way?  
+
+```{r fit a sinusoid}
+# Make a vector of shootings per day for our data
+endDate = max(data.clean$OCCUR_DATE)
+startDate = min(data.clean$OCCUR_DATE)
+days = vector(length=1+as.numeric(as.Date(endDate))-as.numeric(as.Date(startDate)))
+t = 1:length(days)
+for (d in t) {
+  days[d] = sum(data.clean$OCCUR_DATE == as.Date(as.numeric(as.Date(startDate))+d-1, origin="1970-01-01"))
+}
+sinfit = lm(days~sin(6.28*t/365) + cos(6.28*t/365) + sin(12.56*t/365) + cos(12.56*t/365) + t + t^2)
+perday = data.frame(days, t)
+perday$fit = fitted(sinfit)
+ggplot(data=perday, aes(x=t, y=days)) + 
+  geom_line() + 
+  geom_line(data=perday, mapping=aes(x=t, y=fit), color="red") +
+  xlab("Days since 2006-01-01") +
+  ylab("Shootings per Day") +
+  labs(title="NYPD-Recorded Shootings per day. 2006-2021 ")
+```  
+  
+Here, the daily shootings are plotted. It doesn't look much noisier than the previous histogram, probably because the number of weeks in 16 years is already more x-values than can be easily visualized.  
+I've fitted a linear model of a 2nd-order polynomial added to a 2nd-order (in frequency per year) sinusoidal function. It misses the noisy extremes, but matches the yearly pattern of the data.  
+A model like this would not help with outlier days with many shootings, but it could help hospitals prepare in advance to accept an expected number of shooting victims
+  
+```{r Map of shootings scatterplot}
+ggplot(data=data.clean, aes(x=Longitude, y=Latitude)) + 
+  geom_point() + 
+  labs(title="Map of Shooting Incidents in New York 2006-2021")
+```  
+
+```{r Map of shootings heatmap}
+ggplot(data=data.clean, aes(x=Longitude, y=Latitude)) + 
+  geom_hex(bins=70) + 
+  labs(title="Map of Shooting Incidents in New York 2006-2021")
+```  
+  
+Here is a scatterplot and a heatmap of the shooting data, showing the locations of shooting incidents.  
+The outline of NYC and some of its islands can be seen, with water showing up as clear channels between dots.  
+To investigate further, we could try and find out why certain areas have a higher density of incidents. We could look into what other geographic factors affect this, like proximity to police stations, street lighting, or other ideas that may come up.
+
+## Project Step 4: Add Bias Identification
+### Write the conclusion to your project report and include any possible sources of bias.  Be sure to identify what your personal bias might be and how you have mitigated that.
+
+The NYPD shooting incident data from 2006 to 2021 was downloaded and saved in memory. It was then cleaned of unnecessary information and sorted by date.  
+  
+Plotting the number of crimes per week for the length of the time spanned by the data showed the increases and decreases over the last 16 years, and revealed a annually repeating pattern: recorded shootings are much more common in summer than in the winter.  
+  
+The data, when plotted spatially by latitude and longitude, show a map of New York overlaid by dots showing individual shootings. This shows which parts of the city have the more or fewer recorded shootings than other parts.  
+  
+The people who recorded this data likely wanted to build a complete dataset of all shootings incidents in the city. Sources of bias that would cause the data to deviate from this are mostly in the recording process - This data probably does not contain *every* shooting incident, but rather the ones that were recorded. This could cause shootings in places with more police, or with people who are more likely to call the police, more likely to be reported, and shootings in places with fewer police may go unreported.  
+  
+Much of my own bias is in the ignorance of the circumstances of this data's recording. I'm assuming police presence is a likely source of bias, and possibly even something that affects the likelihood of a shooting incident nearby. I've discarded the data relating to age, race, and some others, because I didn't feel that that was the most important to analyze. The discarded data could have contained valuable insights regarding the patterns I've found here.  
+  
+  
+```{r sessioninfo}
+sessionInfo()
+```
+  
